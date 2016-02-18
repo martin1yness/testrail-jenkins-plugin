@@ -65,14 +65,23 @@ public class JUnitResults {
                         Testsuites suites = null;
                         logger.println("processing " + file.getName());
                         try {
-                            suites = (Testsuites) jaxbUnmarshaller.unmarshal(file);
-                            if (suites.hasSuites()) {
-                                for (Testsuite suite : suites.getSuites()) {
-                                    Suites.add(suite);
+                            Object obj = jaxbUnmarshaller.unmarshal(file);
+                            if(Testsuites.class.isAssignableFrom(obj.getClass())) {
+                                suites = (Testsuites) obj;
+                                if (suites.hasSuites()) {
+                                    for (Testsuite suite : suites.getSuites()) {
+                                        Suites.add(suite);
+                                    }
                                 }
+                            } else if(Testsuite.class.isAssignableFrom(obj.getClass())) {
+                                Suites.add((Testsuite)obj);
+                            } else {
+                                throw new IllegalStateException("Unexpected unmarshalled type: " + obj.getClass());
                             }
+
                         } catch (JAXBException e) {
-                            e.printStackTrace();
+                            logger.println("Unable to deserialize `"+file.getName()+"`: " + e.getMessage());
+                            e.printStackTrace(logger);
                         }
                     }
                 });
