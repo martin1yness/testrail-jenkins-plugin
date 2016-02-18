@@ -66,13 +66,13 @@ public class JUnitResults {
                         logger.println("processing " + file.getName());
                         try {
                             suites = (Testsuites) jaxbUnmarshaller.unmarshal(file);
+                            if (suites.hasSuites()) {
+                                for (Testsuite suite : suites.getSuites()) {
+                                    Suites.add(suite);
+                                }
+                            }
                         } catch (JAXBException e) {
                             e.printStackTrace();
-                        }
-                        if (suites.hasSuites()) {
-                            for (Testsuite suite : suites.getSuites()) {
-                                Suites.add(suite);
-                            }
                         }
                     }
                 });
