@@ -1,26 +1,31 @@
 package testrail.testrail.testng;
 
+import java.io.Serializable;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 
 /**
  * An unmarshalled Test NG Suite object
  */
-public class TestNGSuite {
-	protected static final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX");
+public class TestNGSuite implements Serializable {
+	private static final long serialVersionUID = 1;
+	protected transient static final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX");
 
 	private String name;
 	private int duration;
 	private Date started, finished;
+	private List<TestNGCase> cases;
 
 	public TestNGSuite() { }
 
-	public TestNGSuite(String name, int duration, Date started, Date finished) {
+	public TestNGSuite(String name, int duration, Date started, Date finished, List<TestNGCase> cases) {
 		this.name = name;
 		this.duration = duration;
 		this.started = started;
 		this.finished = finished;
+		this.cases = cases;
 	}
 
 	public String getName() {
@@ -81,6 +86,15 @@ public class TestNGSuite {
 
 	public TestNGSuite setFinished(Date finished) {
 		this.finished = finished;
+		return this;
+	}
+
+	public List<TestNGCase> getCases() {
+		return cases;
+	}
+
+	public TestNGSuite setCases(List<TestNGCase> cases) {
+		this.cases = cases;
 		return this;
 	}
 }

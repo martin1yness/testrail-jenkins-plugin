@@ -15,4 +15,10 @@
         </classes>
     </test>
 
+    <test name="Unmarshal TestNG Result XML">
+        <classes>
+            <class name="testrail.testrail.testng.TestNGSaxParserTest"/>
+        </classes>
+    </test>
+
 </suite>
