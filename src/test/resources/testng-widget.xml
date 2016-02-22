@@ -1,0 +1,27 @@
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd" >
+
+<!-- the suite `name` attribute must match the test suite name in TestRail -->
+<suite name="Widget" verbose="1">
+
+    <!-- The `name` attribute must match the name in TestRail -->
+    <test name="Widget Works" >
+        <classes>
+            <class name="testrail.testrail.TestWidgetWorks">
+                <methods>
+                    <include name="testVerifySomething_givenSomething_thenSomething"/>
+                </methods>
+            </class>
+        </classes>
+    </test>
+
+    <!-- The `name` attribute must match the name in TestRail -->
+    <test name="Widget Does X">
+        <classes>
+            <class name="testrail.testrail.TestWidgetWorks">
+                <methods>
+                    <include name="testVerifySomething_givenSomethingElse_thenSomethingElse"/>
+                </methods>
+            </class>
+        </classes>
+    </test>
+</suite>
