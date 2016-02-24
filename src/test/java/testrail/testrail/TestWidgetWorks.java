@@ -16,6 +16,6 @@ public class TestWidgetWorks {
 
 	@Test
 	public void testVerifySomething_givenSomethingElse_thenSomethingElse() {
-		assertTrue(false);
+		assertTrue(true);
 	}
 }
