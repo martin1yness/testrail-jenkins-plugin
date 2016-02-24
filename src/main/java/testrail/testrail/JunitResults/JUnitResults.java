@@ -63,7 +63,7 @@ public class JUnitResults {
                     @Override
                     public void visit(File file, String s) throws IOException {
                         Testsuites suites = null;
-                        logger.println("processing " + file.getName());
+                        logger.println("Processing potential JUnit result xml: " + file.getName());
                         try {
                             Object obj = jaxbUnmarshaller.unmarshal(file);
                             if(Testsuites.class.isAssignableFrom(obj.getClass())) {
@@ -80,8 +80,7 @@ public class JUnitResults {
                             }
 
                         } catch (JAXBException e) {
-                            logger.println("Unable to deserialize `"+file.getName()+"`: " + e.getMessage());
-                            e.printStackTrace(logger);
+                            logger.println("[JUnit Parser] Ignoring file `"+file.getName()+"`: " + e.getMessage());
                         }
                     }
                 });

@@ -43,4 +43,19 @@ public class Suite {
 
     public String getStringId() { return Integer.toString(id); }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        Suite suite = (Suite) o;
+
+        return name.equals(suite.name);
+
+    }
+
+    @Override
+    public int hashCode() {
+        return name.hashCode();
+    }
 }

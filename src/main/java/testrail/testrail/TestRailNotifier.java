@@ -25,6 +25,8 @@ import hudson.Util;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
 import hudson.model.BuildListener;
+import hudson.util.DirScanner;
+import hudson.util.FileVisitor;
 import hudson.util.ListBoxModel;
 import hudson.tasks.*;
 import hudson.util.FormValidation;
@@ -32,50 +34,68 @@ import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
-import testrail.testrail.JunitResults.Failure;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
 import testrail.testrail.JunitResults.JUnitResults;
 import testrail.testrail.JunitResults.Testcase;
 import testrail.testrail.JunitResults.Testsuite;
 import testrail.testrail.TestRailObjects.*;
+import testrail.testrail.testng.TestNGCase;
+import testrail.testrail.testng.TestNGSaxParser;
+import testrail.testrail.testng.TestNGSuite;
 
 import javax.servlet.ServletException;
 import javax.xml.bind.JAXBException;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.Iterator;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import static testrail.testrail.Utils.*;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class TestRailNotifier extends Notifier {
 
     private int testrailProject;
-    private int testrailSuite;
     private String junitResultsGlob;
+    private String testNGResultGlob;
     private String testrailMilestone;
     private boolean enableMilestone;
+
     // Fields in config.jelly must match the parameter names in the "DataBoundConstructor"
     @DataBoundConstructor
-    public TestRailNotifier(int testrailProject, int testrailSuite, String junitResultsGlob, String testrailMilestone, boolean enableMilestone) {
+    public TestRailNotifier(int testrailProject, String junitResultsGlob, String testNGResultGlob, String testrailMilestone, boolean enableMilestone) {
         this.testrailProject = testrailProject;
-        this.testrailSuite = testrailSuite;
         this.junitResultsGlob = junitResultsGlob;
+		this.testNGResultGlob = testNGResultGlob;
         this.testrailMilestone = testrailMilestone;
         this.enableMilestone = enableMilestone;
     }
 
     public void setTestrailProject(int project) { this.testrailProject = project;}
     public int getTestrailProject() { return this.testrailProject; }
-    public void setTestrailSuite(int suite) { this.testrailSuite = suite; }
-    public int getTestrailSuite() { return this.testrailSuite; }
     public void setJunitResultsGlob(String glob) { this.junitResultsGlob = glob; }
-    public String getJunitResultsGlob() { return this.junitResultsGlob; }
+	public String getJunitResultsGlob() { return this.junitResultsGlob; }
+	public String getTestNGResultGlob() { return testNGResultGlob; }
+	public void setTestNGResultGlob(String testNGResultGlob) { this.testNGResultGlob = testNGResultGlob; }
     public String getTestrailMilestone() { return this.testrailMilestone; }
     public void setTestrailMilestone(String milestone) { this.testrailMilestone = milestone; }
     public void setEnableMilestone(boolean mstone) {this.enableMilestone = mstone; }
     public boolean getEnableMilestone() { return  this.enableMilestone; }
 
     @Override
-    public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener)
+    public boolean perform(final AbstractBuild build, Launcher launcher, final BuildListener listener)
             throws IOException, InterruptedException {
+		listener.getLogger().println("---------------------------- [TestRail Plugin] ----------------------------");
+
         TestRailClient  testrail = getDescriptor().getTestrailInstance();
         testrail.setHost(getDescriptor().getTestrailHost());
         testrail.setUser(getDescriptor().getTestrailUser());
@@ -83,7 +103,7 @@ public class TestRailNotifier extends Notifier {
 
         ExistingTestCases testCases = null;
         try {
-            testCases = new ExistingTestCases(testrail, this.testrailProject, this.testrailSuite);
+            testCases = new ExistingTestCases(testrail, this.testrailProject);
         } catch (ElementNotFoundException e) {
             listener.getLogger().println("Cannot find project on TestRail server. Please check your Jenkins job and system configurations.");
             return false;
@@ -98,8 +118,7 @@ public class TestRailNotifier extends Notifier {
         }
 
         listener.getLogger().println("Munging test result files.");
-        Results results = new Results();
-
+        final Results results = new Results();
         // FilePath doesn't have a read method. We want to actually process the files on the master
         // because during processing we talk to TestRail and slaves might not be able to.
         // So we'll copy the result files to the master and munge them there:
@@ -112,79 +131,124 @@ public class TestRailNotifier extends Notifier {
         // This picks up *all* result files so if you have old results in the same directory we'll see those, too.
         build.getWorkspace().copyRecursiveTo(junitResultsGlob, "", tempdir);
 
+        //
+        // Attempt JUnit parsing
+        //
         JUnitResults actualJunitResults = null;
         try {
+			listener.getLogger().println("Searching for JUnit test results in: " + this.junitResultsGlob);
             actualJunitResults = new JUnitResults(tempdir, this.junitResultsGlob, listener.getLogger());
         } catch (JAXBException e) {
             listener.getLogger().println(e.getMessage());
         }
         List<Testsuite> suites = actualJunitResults.getSuites();
         for (Testsuite suite: suites) {
-            results.merge(addSuite(suite, null, testCases));
+            for(Testcase testCase: suite.getCases()) {
+                for(Case testRailCase: testCases.getCasesInSuite(suite.getName())) {
+                    if(testCase.getName().equalsIgnoreCase(testRailCase.getTitle())) {
+                        Result.STATUS status = Result.STATUS.PASSED;
+                        String comment = "";
+                        if(testCase.getFailure() != null) {
+                            status = Result.STATUS.FAILED;
+                            comment += testCase.getFailure().getMessage() + "\r\n\r\n"
+                                    + testCase.getFailure().getText();
+                        }
+                        results.addResult(new Result(testRailCase, status, comment));
+                    }
+                }
+            }
+        }
+
+        //
+        // Attempt TestNG parsing
+        //
+        try {
+			final ExistingTestCases testCases2 = testCases;
+			listener.getLogger().println("[TestNG Parser] Scanning for TestNG xml at: " + this.testNGResultGlob);
+			final DirScanner scanner = new DirScanner.Glob(this.testNGResultGlob, null);
+			scanner.scan(new File("."), new FileVisitor() {
+				@Override public void visit(File file, String s) throws IOException {
+					listener.getLogger().println("[TestNG Parser] Found potential TestNG results xml: " + s);
+					try {
+						TestNGSaxParser parser = new TestNGSaxParser(System.out);
+
+						SAXParserFactory spf = SAXParserFactory.newInstance();
+						spf.setNamespaceAware(true);
+						SAXParser saxParser = null;
+						saxParser = spf.newSAXParser();
+						XMLReader xmlReader = saxParser.getXMLReader();
+						xmlReader.setContentHandler(parser);
+						InputStream istream = new FileInputStream(file);
+						InputSource isource = new InputSource(istream);
+						xmlReader.parse(isource);
+
+						List<TestNGSuite> testNGSuites = parser.getSuites();
+						for(TestNGSuite testNGSuite: testNGSuites) {
+							for(TestNGCase testNGCase: testNGSuite.getCases()) {
+								for(Case testRailCase: testCases2.getCasesInSuite(testNGSuite.getName())) {
+									if(testNGCase.getName().equalsIgnoreCase(testRailCase.getTitle())) {
+										Result.STATUS status = Result.STATUS.PASSED;
+										String comment = "";
+										if(!testNGCase.isSuccessful()) {
+											status = Result.STATUS.FAILED;
+											comment = testNGCase.getResultDescription();
+										}
+										results.addResult(new Result(testRailCase, status, comment));
+									}
+								}
+							}
+						}
+					} catch (Exception e) {
+						e.printStackTrace(listener.getLogger());
+					}
+				}
+			});
+
+
+        } catch(Exception e) {
+            listener.getLogger().println(e.getMessage());
+            e.printStackTrace(listener.getLogger());
         }
 
         listener.getLogger().println("Uploading results to TestRail.");
-        String runComment = "Automated results from Jenkins: " + BuildWrapper.all().jenkins.getRootUrl() + "/" + build.getUrl().toString();
+        String runComment = "Automated results from Jenkins: " + BuildWrapper.all().jenkins.getRootUrl() + build.getUrl().toString();
         String milestoneId = testrailMilestone;
 
-        int runId = testrail.addRun(testCases.getProjectId(), testCases.getSuiteId(), milestoneId, runComment);
-        TestRailResponse response = testrail.addResultsForCases(runId, results);
-        boolean buildResult = (200 == response.getStatus());
-        if (buildResult) {
-            listener.getLogger().println("Successfully uploaded test results.");
-        } else {
-            listener.getLogger().println("Failed to add results to TestRail.");
-            listener.getLogger().println("status: " + response.getStatus());
-            listener.getLogger().println("body :\n" + response.getBody());
+        Map<Integer, Integer> suiteIdToRunIdMap = new HashMap<Integer, Integer>();
+        Map<Integer, Results> suiteIdToResultsMap = new HashMap<Integer, Results>();
+        for(Result result: results.getResults()) {
+            Suite testRailSuite = testCases.getCasesSuite(result.getCaseId());
+            if(!suiteIdToRunIdMap.containsKey(testRailSuite.getId())) {
+                int runId = testrail.addRun(testCases.getProjectId(), testRailSuite.getId(), milestoneId, runComment);
+                suiteIdToRunIdMap.put(testRailSuite.getId(), runId);
+                suiteIdToResultsMap.put(testRailSuite.getId(), new Results());
+            }
+			listener.getLogger().println("Result["+result.getStatus().name()+"]: "
+					+ testRailSuite.getName() + " -> " + result.getCaseObj().getTitle());
+            suiteIdToResultsMap.get(testRailSuite.getId()).addResult(result);
         }
-        testrail.closeRun(runId);
+
+        boolean buildResult = false;
+		if(suiteIdToResultsMap.isEmpty())
+			listener.getLogger().println("No test results were found!");
+        for(Integer suiteId: suiteIdToResultsMap.keySet()) {
+            int runId = suiteIdToRunIdMap.get(suiteId);
+            TestRailResponse response = testrail.addResultsForCases(runId, suiteIdToResultsMap.get(suiteId));
+            buildResult = (200 == response.getStatus());
+            if (buildResult) {
+                listener.getLogger().println("Successfully uploaded test results.");
+            } else {
+                listener.getLogger().println("Failed to add results to TestRail.");
+                listener.getLogger().println("status: " + response.getStatus());
+                listener.getLogger().println("body :\n" + response.getBody());
+            }
+            testrail.closeRun(runId);
+        }
 
         return buildResult;
     }
 
-    public Results addSuite(Testsuite suite, String parentId, ExistingTestCases existingCases) throws IOException {
-        //figure out TR sectionID
-        int sectionId;
-        try {
-            sectionId = existingCases.getSectionId(suite.getName());
-        } catch (ElementNotFoundException e1) {
-            try {
-                sectionId = existingCases.addSection(suite.getName(), parentId);
-            } catch (ElementNotFoundException e) {
-                //listener.getLogger().println("Unable to add test section " + suite.getName());
-                //listener.getLogger().println(e.getMessage());
-                return null;
-            }
-        }
-        //if we have any subsections - process them
-        Results results = new Results();
-        if (suite.hasSuits()) {
-            for (Testsuite subsuite : suite.getSuits()) {
-                results.merge(addSuite(subsuite, String.valueOf(sectionId), existingCases));
-            }
-        }
-        if (suite.hasCases()) {
-            for (Testcase testcase : suite.getCases()) {
-                int caseId;
-                try {
-                    caseId = existingCases.getCaseId(suite.getName(), testcase.getName());
-                } catch (ElementNotFoundException e) {
-                    caseId = existingCases.addCase(testcase.getName(), sectionId);
-                }
-                int caseStatus;
-                String caseComment = null;
-                Failure caseFailure = testcase.getFailure();
-                if (caseFailure != null) {
-                    caseStatus = 5; // Failed
-                    caseComment = caseFailure.getText();
-                } else {
-                    caseStatus = 1; // Passed
-                }
-                results.addResult(new Result(caseId, caseStatus, caseComment));
-            }
-        }
-        return results;
-    }
+
     // Overridden for better type safety.
     // If your plugin doesn't really define any property on Descriptor,
     // you don't have to do this.
@@ -245,6 +309,7 @@ public class TestRailNotifier extends Notifier {
             }
             return FormValidation.ok();
         }
+
         public ListBoxModel doFillTestrailProjectItems() {
             testrail.setHost(getTestrailHost());
             testrail.setUser(getTestrailUser());
@@ -260,32 +325,6 @@ public class TestRailNotifier extends Notifier {
             return items;
         }
 
-        public ListBoxModel doFillTestrailSuiteItems(@QueryParameter int testrailProject) {
-            testrail.setHost(getTestrailHost());
-            testrail.setUser(getTestrailUser());
-            testrail.setPassword(getTestrailPassword());
-            ListBoxModel items = new ListBoxModel();
-
-            try {
-                for (Suite suite : testrail.getSuits(testrailProject)) {
-                    items.add(suite.getName(), suite.getStringId());
-                }
-            } catch (ElementNotFoundException e) {
-            } catch (IOException e) {
-            }
-            return items;
-        }
-        public FormValidation doCheckTestrailSuite(@QueryParameter String value)
-                throws IOException, ServletException {
-            testrail.setHost(getTestrailHost());
-            testrail.setUser(getTestrailUser());
-            testrail.setPassword(getTestrailPassword());
-            if (getTestrailHost().isEmpty() || getTestrailUser().isEmpty() || getTestrailPassword().isEmpty() || !testrail.serverReachable() || !testrail.authenticationWorks()) {
-                return FormValidation.warning("Please fix your TestRail configuration in Manage Jenkins -> Configure System.");
-            }
-            return FormValidation.ok();
-        }
-
         public FormValidation doCheckJunitResultsGlob(@QueryParameter String value)
                 throws IOException, ServletException {
             if (value.length() == 0)
@@ -293,6 +332,23 @@ public class TestRailNotifier extends Notifier {
             // TODO: Should we check to see if the files exist? Probably not.
             return FormValidation.ok();
         }
+
+		public FormValidation doCheckTestNGResultGlob(@QueryParameter String value)
+				throws IOException, ServletException {
+			if (value.length() == 0)
+				return FormValidation.warning("Please enter testng result XML file location.");
+			final DirScanner scanner = new DirScanner.Glob(value, null);
+			final AtomicBoolean fileFound = new AtomicBoolean(false);
+			scanner.scan(new File("."), new FileVisitor() {
+				@Override public void visit(File file, String s) throws IOException {
+					fileFound.set(true);
+				}
+			});
+			if(!fileFound.get())
+				return FormValidation.warning("Could not find file: " + value);
+
+			return FormValidation.ok();
+		}
 
         public FormValidation doCheckTestrailHost(@QueryParameter String value)
                 throws IOException, ServletException {
