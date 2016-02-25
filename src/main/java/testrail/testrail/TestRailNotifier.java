@@ -25,6 +25,7 @@ import hudson.Util;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
 import hudson.model.BuildListener;
+import hudson.remoting.VirtualChannel;
 import hudson.util.DirScanner;
 import hudson.util.FileVisitor;
 import hudson.util.ListBoxModel;
@@ -37,11 +38,13 @@ import org.kohsuke.stapler.StaplerRequest;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
+import testrail.testrail.JunitResults.JUnitResultFileProcessor;
 import testrail.testrail.JunitResults.JUnitResults;
 import testrail.testrail.JunitResults.Testcase;
 import testrail.testrail.JunitResults.Testsuite;
 import testrail.testrail.TestRailObjects.*;
 import testrail.testrail.testng.TestNGCase;
+import testrail.testrail.testng.TestNGResultFileProcessor;
 import testrail.testrail.testng.TestNGSaxParser;
 import testrail.testrail.testng.TestNGSuite;
 
@@ -117,98 +120,18 @@ public class TestRailNotifier extends Notifier {
             listener.getLogger().println("Element not found:" + e.getMessage());
         }
 
-        listener.getLogger().println("Munging test result files.");
         final Results results = new Results();
-        // FilePath doesn't have a read method. We want to actually process the files on the master
-        // because during processing we talk to TestRail and slaves might not be able to.
-        // So we'll copy the result files to the master and munge them there:
-        //
-        // Create a temp directory.
-        // Do a base.copyRecursiveTo() with file masks into the temp dir.
-        // process the temp files.
-        // it looks like the destructor deletes the temp dir when we're finished
-        FilePath tempdir = new FilePath(Util.createTempDir());
-        // This picks up *all* result files so if you have old results in the same directory we'll see those, too.
-        build.getWorkspace().copyRecursiveTo(junitResultsGlob, "", tempdir);
 
-        //
-        // Attempt JUnit parsing
-        //
-        JUnitResults actualJunitResults = null;
-        try {
-			listener.getLogger().println("Searching for JUnit test results in: " + this.junitResultsGlob);
-            actualJunitResults = new JUnitResults(tempdir, this.junitResultsGlob, listener.getLogger());
-        } catch (JAXBException e) {
-            listener.getLogger().println(e.getMessage());
-        }
-        List<Testsuite> suites = actualJunitResults.getSuites();
-        for (Testsuite suite: suites) {
-            for(Testcase testCase: suite.getCases()) {
-                for(Case testRailCase: testCases.getCasesInSuite(suite.getName())) {
-                    if(testCase.getName().equalsIgnoreCase(testRailCase.getTitle())) {
-                        Result.STATUS status = Result.STATUS.PASSED;
-                        String comment = "";
-                        if(testCase.getFailure() != null) {
-                            status = Result.STATUS.FAILED;
-                            comment += testCase.getFailure().getMessage() + "\r\n\r\n"
-                                    + testCase.getFailure().getText();
-                        }
-                        results.addResult(new Result(testRailCase, status, comment));
-                    }
-                }
-            }
-        }
+		Results junitResults = Utils.processResultsFiles(junitResultsGlob,
+				new JUnitResultFileProcessor(listener.getLogger(), testCases),
+				testCases, build.getWorkspace(), listener.getLogger());
 
-        //
-        // Attempt TestNG parsing
-        //
-        try {
-			final ExistingTestCases testCases2 = testCases;
-			listener.getLogger().println("[TestNG Parser] Scanning for TestNG xml at: " + this.testNGResultGlob);
-			final DirScanner scanner = new DirScanner.Glob(this.testNGResultGlob, null);
-			scanner.scan(new File("."), new FileVisitor() {
-				@Override public void visit(File file, String s) throws IOException {
-					listener.getLogger().println("[TestNG Parser] Found potential TestNG results xml: " + s);
-					try {
-						TestNGSaxParser parser = new TestNGSaxParser(System.out);
+		Results testNgResults = Utils.processResultsFiles(testNGResultGlob,
+				new TestNGResultFileProcessor(listener.getLogger(), testCases),
+				testCases, build.getWorkspace(), listener.getLogger());
 
-						SAXParserFactory spf = SAXParserFactory.newInstance();
-						spf.setNamespaceAware(true);
-						SAXParser saxParser = null;
-						saxParser = spf.newSAXParser();
-						XMLReader xmlReader = saxParser.getXMLReader();
-						xmlReader.setContentHandler(parser);
-						InputStream istream = new FileInputStream(file);
-						InputSource isource = new InputSource(istream);
-						xmlReader.parse(isource);
-
-						List<TestNGSuite> testNGSuites = parser.getSuites();
-						for(TestNGSuite testNGSuite: testNGSuites) {
-							for(TestNGCase testNGCase: testNGSuite.getCases()) {
-								for(Case testRailCase: testCases2.getCasesInSuite(testNGSuite.getName())) {
-									if(testNGCase.getName().equalsIgnoreCase(testRailCase.getTitle())) {
-										Result.STATUS status = Result.STATUS.PASSED;
-										String comment = "";
-										if(!testNGCase.isSuccessful()) {
-											status = Result.STATUS.FAILED;
-											comment = testNGCase.getResultDescription();
-										}
-										results.addResult(new Result(testRailCase, status, comment));
-									}
-								}
-							}
-						}
-					} catch (Exception e) {
-						e.printStackTrace(listener.getLogger());
-					}
-				}
-			});
-
-
-        } catch(Exception e) {
-            listener.getLogger().println(e.getMessage());
-            e.printStackTrace(listener.getLogger());
-        }
+		results.merge(junitResults);
+		results.merge(testNgResults);
 
         listener.getLogger().println("Uploading results to TestRail.");
         String runComment = "Automated results from Jenkins: " + BuildWrapper.all().jenkins.getRootUrl() + build.getUrl().toString();
