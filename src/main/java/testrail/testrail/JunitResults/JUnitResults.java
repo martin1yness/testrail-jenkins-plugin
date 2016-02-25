@@ -63,16 +63,24 @@ public class JUnitResults {
                     @Override
                     public void visit(File file, String s) throws IOException {
                         Testsuites suites = null;
-                        logger.println("processing " + file.getName());
+                        logger.println("Processing potential JUnit result xml: " + file.getName());
                         try {
-                            suites = (Testsuites) jaxbUnmarshaller.unmarshal(file);
-                        } catch (JAXBException e) {
-                            e.printStackTrace();
-                        }
-                        if (suites.hasSuites()) {
-                            for (Testsuite suite : suites.getSuites()) {
-                                Suites.add(suite);
+                            Object obj = jaxbUnmarshaller.unmarshal(file);
+                            if(Testsuites.class.isAssignableFrom(obj.getClass())) {
+                                suites = (Testsuites) obj;
+                                if (suites.hasSuites()) {
+                                    for (Testsuite suite : suites.getSuites()) {
+                                        Suites.add(suite);
+                                    }
+                                }
+                            } else if(Testsuite.class.isAssignableFrom(obj.getClass())) {
+                                Suites.add((Testsuite)obj);
+                            } else {
+                                throw new IllegalStateException("Unexpected unmarshalled type: " + obj.getClass());
                             }
+
+                        } catch (JAXBException e) {
+                            logger.println("[JUnit Parser] Ignoring file `"+file.getName()+"`: " + e.getMessage());
                         }
                     }
                 });

@@ -34,7 +34,11 @@ import org.json.JSONObject;
 import javax.xml.ws.http.HTTPException;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
 import static testrail.testrail.Utils.*;
 /**
  * Created by Drew on 3/19/14.
@@ -176,16 +180,21 @@ public class TestRailClient {
         return result;
     }
 
-    public Case[] getCases(int projectId, int suiteId) throws IOException, ElementNotFoundException {
-        // "/#{project_id}&suite_id=#{suite_id}#{section_string}"
-        String body = httpGet("index.php?/api/v2/get_cases/" + projectId + "&suite_id=" + suiteId).getBody();
-        JSONArray json = new JSONArray(body);
-        Case[] cases = new Case[json.length()];
-        for (int i = 0; i < json.length(); i++) {
-            JSONObject o = json.getJSONObject(i);
-            cases[i] = createCaseFromJson(o);
+    public Map<Suite, List<Case>> getCases(int projectId) throws IOException, ElementNotFoundException {
+        Map<Suite, List<Case>> caseMap = new HashMap<Suite, List<Case>>();
+        for(Suite suite: getSuits(projectId)) {
+            // "/#{project_id}&suite_id=#{suite_id}#{section_string}"
+            String body = httpGet("index.php?/api/v2/get_cases/" + projectId + "&suite_id=" + suite.getStringId())
+                    .getBody();
+            JSONArray json = new JSONArray(body);
+            Case[] cases = new Case[json.length()];
+            for (int i = 0; i < json.length(); i++) {
+                JSONObject o = json.getJSONObject(i);
+                cases[i] = createCaseFromJson(o);
+            }
+            caseMap.put(suite, Arrays.asList(cases));
         }
-        return cases;
+        return caseMap;
     }
 
     public Section[] getSections(int projectId, int suiteId) throws IOException, ElementNotFoundException {
@@ -241,7 +250,7 @@ public class TestRailClient {
         for (int i = 0; i < results.getResults().size(); i++) {
             JSONObject o = new JSONObject();
             Result r = results.getResults().get(i);
-            o.put("case_id", r.getCsaeId()).put("status_id", r.getStatusId()).put("comment", r.getComment());
+            o.put("case_id", r.getCaseId()).put("status_id", r.getStatusId()).put("comment", r.getComment());
             a.put(o);
         }
 
@@ -291,5 +300,15 @@ public class TestRailClient {
         String payload = "";
         int status = httpPost("index.php?/api/v2/close_run/" + runId, payload).getStatus();
         return (200 == status);
+    }
+
+    public Section getSection(int sectionId) throws ElementNotFoundException {
+        try {
+            String body = httpGet("index.php?/api/v2/get_section/" + sectionId).getBody();
+            JSONObject json = new JSONObject(body);
+            return createSectionFromJSON(json);
+        } catch(IOException ioe) {
+            throw new ElementNotFoundException("Section id("+sectionId+") not found: " +ioe.getMessage());
+        }
     }
 }

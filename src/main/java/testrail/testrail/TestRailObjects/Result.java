@@ -22,9 +22,19 @@ package testrail.testrail.TestRailObjects;
  * Created by Drew on 3/25/2014.
  */
 public class Result {
+	public enum STATUS {_UNDEFINED_, PASSED, BLOCKED, UNTESTED, RETESTED, FAILED}
+
+    private transient Case caseObj;
     private int caseId;
     private int statusId;
     private String comment;
+
+    public Result(Case caseObj, STATUS status, String comment) {
+        this.caseObj = caseObj;
+        this.caseId = caseObj.getId();
+        this.statusId = status.ordinal();
+        this.comment = comment;
+    }
 
     public Result(int caseId, int statusId, String comment) {
         this.caseId = caseId;
@@ -36,7 +46,13 @@ public class Result {
     public void setStatusId(int statusId) { this.statusId = statusId; }
     public void setComment(String comment) { this.comment = comment; }
 
-    public int getCsaeId() { return this.caseId; }
+    public Case getCaseObj() {
+        return caseObj;
+    }
+    public STATUS getStatus() {
+        return STATUS.values()[statusId];
+    }
+    public int getCaseId() { return this.caseId; }
     public int getStatusId() { return this.statusId; }
     public String getComment() { return this.comment; }
 }

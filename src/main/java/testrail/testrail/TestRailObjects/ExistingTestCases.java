@@ -22,9 +22,11 @@ import testrail.testrail.TestRailClient;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Created by Drew on 3/24/2014.
@@ -32,96 +34,53 @@ import java.util.List;
 public class ExistingTestCases {
     private TestRailClient testRailClient;
     private int projectId;
-    private String suite;
-    private int suiteId;
-    private List<Case> cases;
-    private List<Section> sections;
+    private Map<Suite, List<Case>> cases;
+    private Map<Integer, Suite> caseIdToSuite;
 
-    public ExistingTestCases(TestRailClient testRailClient, int projectId, int suite)
+    public ExistingTestCases(TestRailClient testRailClient, int projectId)
             throws IOException, ElementNotFoundException {
         this.projectId = projectId;
         this.testRailClient = testRailClient;
-        this.suiteId = suite;
-        this.cases = new ArrayList<Case>(Arrays.asList(testRailClient.getCases(this.projectId, this.suiteId)));
-        this.sections = new ArrayList<Section>(Arrays.asList(testRailClient.getSections(this.projectId, this.suiteId)));
+        this.cases = testRailClient.getCases(this.projectId);
+        caseIdToSuite = new HashMap<Integer, Suite>(this.cases.size() * 2);
+        for(Suite suite: this.cases.keySet()) {
+            for(Case testRailCase: this.cases.get(suite)) {
+                caseIdToSuite.put(testRailCase.getId(), suite);
+            }
+        }
     }
 
     public int getProjectId() {
         return this.projectId;
     }
 
-    public int getSuiteId() {
-        return this.suiteId;
-    }
-
-    public List<Case> getCases() {
+    public Map<Suite, List<Case>> getCases() {
         return this.cases;
-    }
-
-    public List<Section> getSections() {
-        return this.sections;
-    }
-
-    private String getSectionName(int sectionId) throws ElementNotFoundException {
-        Iterator<Section> iterator = sections.iterator();
-        while (iterator.hasNext()) {
-            Section section = iterator.next();
-            if (section.getId() == sectionId) {
-                return section.getName();
-            }
-        }
-        throw new ElementNotFoundException("sectionId: " + sectionId);
-    }
-
-    public int getCaseId(String sectionName, String caseName) throws ElementNotFoundException {
-        Iterator<Case> caseIterator = cases.iterator();
-        while (caseIterator.hasNext()) {
-            Case testcase = caseIterator.next();
-            if (testcase.getTitle().equals(caseName)) {
-                Iterator<Section> sectionIterator = sections.iterator();
-                while (sectionIterator.hasNext()) {
-                    Section section = sectionIterator.next();
-                    if (section.getName().equals(sectionName) && (testcase.getSectionId() == section.getId())) {
-                        return testcase.getId();
-                    }
-                }
-            }
-        }
-        throw new ElementNotFoundException(sectionName + ": " + caseName);
-    }
-
-    public int getSectionId(String sectionName) throws ElementNotFoundException {
-        Iterator<Section> iterator = sections.iterator();
-        while (iterator.hasNext()) {
-            Section section = iterator.next();
-            if (section.getName().equals(sectionName)) {
-                return section.getId();
-            }
-        }
-        throw new ElementNotFoundException(sectionName);
-    }
-
-    public int addSection(String sectionName, String parentId) throws IOException, ElementNotFoundException {
-        Section addedSection = testRailClient.addSection(sectionName, projectId, suiteId, parentId);
-        sections.add(addedSection);
-        return addedSection.getId();
-    }
-
-    public int addCase(String caseName, int sectionId) throws IOException {
-        Case addedCase = testRailClient.addCase(caseName, sectionId);
-        cases.add(addedCase);
-        return addedCase.getId();
     }
 
     public String[] listTestCases() throws ElementNotFoundException {
         ArrayList<String> result = new ArrayList<String>();
-        Iterator<Case> caseIterator = cases.iterator();
-        while (caseIterator.hasNext()) {
-            Case testcase = caseIterator.next();
-            String sectionName = getSectionName(testcase.getSectionId());
-            result.add(sectionName + ": " + testcase.getTitle());
+        for(List<Case> caseList: cases.values()) {
+            Iterator<Case> caseIterator = caseList.iterator();
+            while (caseIterator.hasNext()) {
+                Case testcase = caseIterator.next();
+                String sectionName = testRailClient.getSection(testcase.getSectionId()).getName();
+                result.add(sectionName + ": " + testcase.getTitle());
+            }
         }
         return result.toArray(new String[result.size()]);
+    }
+
+    public Suite getCasesSuite(Integer caseId) {
+        return caseIdToSuite.get(caseId);
+    }
+
+    public List<Case> getCasesInSuite(String suiteName) {
+        for(Suite suite: cases.keySet()) {
+            if(suite.getName().equalsIgnoreCase(suiteName))
+                return cases.get(suite);
+        }
+        return Collections.emptyList();
     }
 }
 

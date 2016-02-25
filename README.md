@@ -1,7 +1,7 @@
 testrail-jenkins-plugin
 =======================
 
-Forked from  https://github.com/simplymeasured/testrail-jenkins-plugin
+Forked from  https://github.com/achikin/testrail-jenkins-plugin
 Integrate test results from Jenkins into TestRail.
 Upload your junit test results to TestRail after every run.
 Each Jenkins build becomes test run.
@@ -10,11 +10,10 @@ Each testsuite becomes test group.
 
 This fork changelog
 ---------------
-- fixed validation issues
-- added milestone support
-- fixed junit files parsing
-- added nested <testsuite> tags support in junit
-- added dropdown lists to select projects, suites and milestones
+- Support for parsing suite/cases from TestNG results file
+- removed concept of creating test structure in TestRail from test results file, if a test exists it is updated, otherwise it is ignored
+- added abstraction to enable additional test result file processors to be easily added
+- defined a mapping of JUnit/TestNG XML test results to TestRail Test Suite/Case names
 
 Build
 -----
@@ -67,6 +66,54 @@ And to build a package to install on your production Jenkins box
 That creates a .hpi file in the target directory. For more information about installing plugins, please see https://wiki.jenkins-ci.org/display/JENKINS/Plugins.
 
 
+TestNG Support
+---------------------------
+To provide robust control over how suites and cases are implemented, support for TestNG's XML configuration has been
+added. This enables test engineers to define suites and cases as they are in TestRail and map classes/methods to
+these arbitrarily.
+
+Example `testng-results.xml` XML output (see: testrail.testrail.testng/testng-results.xml):
+    <suite name="Widget" duration-ms="91" started-at="2016-02-18T15:41:01Z" finished-at="2016-02-18T15:41:01Z">
+    <groups>
+    </groups>
+    <test name="Widget Works" duration-ms="41" started-at="2016-02-18T15:41:01Z" finished-at="2016-02-18T15:41:01Z">
+        <class name="testrail.testrail.TestWidgetWorks">
+            <test-method status="PASS" signature="testVerifySomething_givenSomething_thenSomething()[pri:0, instance:testrail.testrail.TestWidgetWorks@6a2f6f80]" name="testVerifySomething_givenSomething_thenSomething" duration-ms="18" started-at="2016-02-18T09:41:01Z" finished-at="2016-02-18T09:41:01Z">
+                <reporter-output>
+                </reporter-output>
+            </test-method> <!-- testVerifySomething_givenSomething_thenSomething -->
+        </class> <!-- testrail.testrail.TestWidgetWorks -->
+    </test> <!-- Widget Works -->
+
+This example would map to a Suite named `Widget` and a test case named `Widget Works`. This output comes from the
+example TestNG configuration file:
+    <!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd" >
+
+    <!-- the suite `name` attribute must match the test suite name in TestRail -->
+    <suite name="Widget" verbose="1" >
+
+        <!-- The `name` attribute must match the name in TestRail -->
+        <test name="Widget Works" >
+            <classes>
+                <class name="testrail.testrail.TestWidgetWorks">
+                    <methods>
+                        <include name="testVerifySomething_givenSomething_thenSomething"/>
+                    </methods>
+                </class>
+            </classes>
+        </test>
+
+        <!-- The `name` attribute must match the name in TestRail -->
+        <test name="Widget Does X">
+            <classes>
+                <class name="testrail.testrail.TestWidgetWorks">
+                    <methods>
+                        <include name="testVerifySomething_givenSomethingElse_thenSomethingElse"/>
+                    </methods>
+                </class>
+            </classes>
+        </test>
+    </suite>
 
 License
 -------
