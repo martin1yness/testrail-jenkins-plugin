@@ -60,6 +60,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -103,10 +104,19 @@ public class TestRailNotifier extends Notifier {
         testrail.setHost(getDescriptor().getTestrailHost());
         testrail.setUser(getDescriptor().getTestrailUser());
         testrail.setPassword(getDescriptor().getTestrailPassword());
+        listener.getLogger().println("[TestRail Plugin] Connecting to TestRail: http://"+testrail.getHost()+", with user: " + testrail.getUser());
 
         ExistingTestCases testCases = null;
         try {
             testCases = new ExistingTestCases(testrail, this.testrailProject);
+            listener.getLogger().println("[TestRail Plugin] Found ("+testCases.getCases().size()+") test cases for project "+this.testrailProject);
+            for(Map.Entry<Suite, List<Case>> e: testCases.getCases().entrySet()) {
+                StringBuilder sb = new StringBuilder();
+                for(Case c: e.getValue()) {
+                    sb.append(c.getTitle()).append(", ");
+                }
+                listener.getLogger().println("[TestRail Plugin] Suite `"+e.getKey().getName()+"`, cases: " + sb.toString());
+            }
         } catch (ElementNotFoundException e) {
             listener.getLogger().println("Cannot find project on TestRail server. Please check your Jenkins job and system configurations.");
             return false;
@@ -153,7 +163,7 @@ public class TestRailNotifier extends Notifier {
 
         boolean buildResult = false;
 		if(suiteIdToResultsMap.isEmpty())
-			listener.getLogger().println("No test results were found!");
+			listener.getLogger().println("No test results were found, or none could be mapped to TestRail!");
         for(Integer suiteId: suiteIdToResultsMap.keySet()) {
             int runId = suiteIdToRunIdMap.get(suiteId);
             TestRailResponse response = testrail.addResultsForCases(runId, suiteIdToResultsMap.get(suiteId));
@@ -240,10 +250,11 @@ public class TestRailNotifier extends Notifier {
             ListBoxModel items = new ListBoxModel();
             try {
                 for (Project prj : testrail.getProjects()) {
-                    items.add(prj.getName(), prj.getStringId());
+                    if(prj != null)
+                        items.add(prj.getName(), prj.getStringId());
                 }
-            } catch (ElementNotFoundException e) {
-            } catch (IOException e) {
+            } catch (Exception e) {
+                throw new RuntimeException("Unable to load testrail projects: " + e.getMessage(), e);
             }
             return items;
         }
