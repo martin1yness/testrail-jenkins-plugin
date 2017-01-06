@@ -156,9 +156,14 @@ public class TestRailNotifier extends Notifier {
                 suiteIdToRunIdMap.put(testRailSuite.getId(), runId);
                 suiteIdToResultsMap.put(testRailSuite.getId(), new Results());
             }
-			listener.getLogger().println("Result["+result.getStatus().name()+"]: "
-					+ testRailSuite.getName() + " -> " + result.getCaseObj().getTitle());
-            suiteIdToResultsMap.get(testRailSuite.getId()).addResult(result);
+            if(testCases.getCaseIdToCase().get(result.getCaseId()).getType().equalsIgnoreCase("Automated")) {
+                listener.getLogger().println("Result[" + result.getStatus().name() + "]: "
+                        + testRailSuite.getName() + " -> " + result.getCaseObj().getTitle());
+                suiteIdToResultsMap.get(testRailSuite.getId()).addResult(result);
+            } else {
+                listener.getLogger().println("Result Ignored (Not of Automated type)[" + result.getStatus().name() + "]: "
+                        + testRailSuite.getName() + " -> " + result.getCaseObj().getTitle());
+            }
         }
 
         boolean buildResult = false;

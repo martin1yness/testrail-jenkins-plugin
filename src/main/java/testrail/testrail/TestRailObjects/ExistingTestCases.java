@@ -36,6 +36,7 @@ public class ExistingTestCases {
     private int projectId;
     private Map<Suite, List<Case>> cases;
     private Map<Integer, Suite> caseIdToSuite;
+    private Map<Integer, Case> caseIdToCase;
 
     public ExistingTestCases(TestRailClient testRailClient, int projectId)
             throws IOException, ElementNotFoundException {
@@ -43,9 +44,11 @@ public class ExistingTestCases {
         this.testRailClient = testRailClient;
         this.cases = testRailClient.getCases(this.projectId);
         caseIdToSuite = new HashMap<Integer, Suite>(this.cases.size() * 2);
+        caseIdToCase = new HashMap<Integer, Case>(this.cases.size() * 2);
         for(Suite suite: this.cases.keySet()) {
             for(Case testRailCase: this.cases.get(suite)) {
                 caseIdToSuite.put(testRailCase.getId(), suite);
+                caseIdToCase.put(testRailCase.getId(), testRailCase);
             }
         }
     }
@@ -81,6 +84,10 @@ public class ExistingTestCases {
                 return cases.get(suite);
         }
         return Collections.emptyList();
+    }
+
+    public Map<Integer, Case> getCaseIdToCase() {
+        return caseIdToCase;
     }
 }
 
