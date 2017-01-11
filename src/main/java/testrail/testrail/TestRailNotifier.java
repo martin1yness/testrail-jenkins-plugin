@@ -104,7 +104,7 @@ public class TestRailNotifier extends Notifier {
         testrail.setHost(getDescriptor().getTestrailHost());
         testrail.setUser(getDescriptor().getTestrailUser());
         testrail.setPassword(getDescriptor().getTestrailPassword());
-        listener.getLogger().println("[TestRail Plugin] Connecting to TestRail: http://"+testrail.getHost()+", with user: " + testrail.getUser());
+        listener.getLogger().println("[TestRail Plugin] Connecting to TestRail: "+testrail.getHost()+", with user: " + testrail.getUser());
 
         ExistingTestCases testCases = null;
         try {
