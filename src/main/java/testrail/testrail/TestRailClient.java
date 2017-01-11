@@ -146,6 +146,19 @@ public class TestRailClient {
         return projects;
     }
 
+    public Map<Integer, String> getTestCaseTypeMap() throws IOException {
+        Map<Integer, String> testCaseTypeMap = new HashMap<Integer, String>();
+
+        String body = httpGet("index.php?/api/v2/get_case_types").getBody();
+        JSONArray json = new JSONArray(body);
+        for (int i = 0; i < json.length(); i++) {
+            JSONObject o = json.getJSONObject(i);
+            testCaseTypeMap.put(o.getInt("id"), o.getString("name"));
+        }
+
+        return testCaseTypeMap;
+    }
+
     public int getProjectId(String projectName) throws IOException, ElementNotFoundException {
         Project[] projects = getProjects();
         for(int i = 0; i < projects.length; i++) {
@@ -188,9 +201,10 @@ public class TestRailClient {
                     .getBody();
             JSONArray json = new JSONArray(body);
             Case[] cases = new Case[json.length()];
+            Map<Integer, String> testCaseTypeMap = getTestCaseTypeMap();
             for (int i = 0; i < json.length(); i++) {
                 JSONObject o = json.getJSONObject(i);
-                cases[i] = createCaseFromJson(o);
+                cases[i] = createCaseFromJson(o, testCaseTypeMap);
             }
             caseMap.put(suite, Arrays.asList(cases));
         }
@@ -229,11 +243,13 @@ public class TestRailClient {
         return createSectionFromJSON(o);
     }
 
-    private Case createCaseFromJson(JSONObject o) {
+    private Case createCaseFromJson(JSONObject o, Map<Integer, String> testCaseTypeMap) {
         Case s = new Case();
         s.setTitle(o.getString("title"));
         s.setId(o.getInt("id"));
         s.setSectionId(o.getInt("section_id"));
+        s.setTypeId(o.getInt("type_id"));
+        s.setType(testCaseTypeMap.get(o.getInt("type_id")));
         return s;
     }
     public Case addCase(String caseTitle, int sectionId) throws IOException {
@@ -241,7 +257,7 @@ public class TestRailClient {
         testcase.setTitle(caseTitle);
         String payload = new JSONObject().put("title", caseTitle).toString();
         String body = httpPost("index.php?/api/v2/add_case/" + sectionId, payload).getBody();
-        Case c = createCaseFromJson(new JSONObject(body));
+        Case c = createCaseFromJson(new JSONObject(body), getTestCaseTypeMap());
         return c;
     }
 
